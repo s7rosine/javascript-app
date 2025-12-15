@@ -14,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 🔐 2) GitLeaks – Secret Scanning (Security Gate)
+      # 🔐 2) GitLeaks – Secret Scanning
       - name: Run GitLeaks secret scan
         uses: gitleaks/gitleaks-action@v2
         with:
@@ -22,15 +22,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3) Set an IMAGE_NAME env variable
+      # 3) Set IMAGE_NAME env variable
       - name: Set image name
         run: echo "IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/javascript-app-httpd" >> $GITHUB_ENV
 
-      # 4) Build the Docker image from your Dockerfile
+      # 4) Build the Docker image
       - name: Build Docker image
         run: docker build -t $IMAGE_NAME:latest .
 
-      # 5) Run the container to make sure it starts and serves HTTP
+      # 🛡️ 5) Trivy – Container Image Vulnerability Scan
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      # 6) Run container for test
       - name: Run container for test
         run: |
           docker run -d --name javascript-app-test -p 8080:3000 $IMAGE_NAME:latest
@@ -38,26 +49,26 @@ jobs:
           docker stop javascript-app-test
           docker rm javascript-app-test
 
-      # 6) List all Docker containers
+      # 7) List Docker containers
       - name: List Docker containers
         run: docker ps -a
 
-      # 7) Log in to Docker Hub
+      # 8) Log in to Docker Hub
       - name: Log in to Docker Hub
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      # 8) Push the image to Docker Hub
+      # 9) Push the image to Docker Hub
       - name: Push image to Docker Hub
         run: docker push $IMAGE_NAME:latest
 
-      # 9) Deploy the container on the VM
+      # 10) Deploy the container on the VM
       - name: Deploy container
         run: |
           docker stop javascript-app 2>/dev/null || true
           docker rm javascript-app 2>/dev/null || true
           docker run -d --name javascript-app -p 80:3000 $IMAGE_NAME:latest
 
-      # 10) Verify deployment
+      # 11) Verify deployment
       - name: Verify deployment
         run: |
           echo "Waiting for container to start..."
