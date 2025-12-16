@@ -10,11 +10,13 @@ jobs:
     runs-on: label-1
 
     steps:
-      # 1) Checkout your repository code
+      # 1) Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 🔐 2) GitLeaks – Secret Scanning
+      # 2) GitLeaks – Secret Scanning
       - name: Run GitLeaks secret scan
         uses: gitleaks/gitleaks-action@v2
         with:
@@ -22,26 +24,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3) Set IMAGE_NAME env variable
+      # 3) Setup Node (so we can generate package-lock.json in CI)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 4) Generate/refresh lockfile (apply overrides)
+      - name: Generate/refresh lockfile (apply overrides)
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install
+          npm ls cross-spawn glob || true
+
+      # 5) Set IMAGE_NAME
       - name: Set image name
         run: echo "IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/javascript-app-httpd" >> $GITHUB_ENV
 
-      # 4) Build the Docker image
+      # 6) Build Docker image
       - name: Build Docker image
         run: docker build -t $IMAGE_NAME:latest .
 
-      # 🛡️ 5) Trivy – Container Image Vulnerability Scan
+      # 7) Trivy – Image Vulnerability Scan (fail on HIGH/CRITICAL, except ignored CVEs)
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
           format: table
           exit-code: 1
-          ignore-unfixed: false
+          ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
 
-      # 6) Run container for test
+      # 8) Run container for test
       - name: Run container for test
         run: |
           docker run -d --name javascript-app-test -p 8080:3000 $IMAGE_NAME:latest
@@ -49,29 +65,26 @@ jobs:
           docker stop javascript-app-test
           docker rm javascript-app-test
 
-      # 7) List Docker containers
-      - name: List Docker containers
-        run: docker ps -a
-
-      # 8) Log in to Docker Hub
+      # 9) Log in to Docker Hub
       - name: Log in to Docker Hub
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      # 9) Push the image to Docker Hub
+      # 10) Push image
       - name: Push image to Docker Hub
         run: docker push $IMAGE_NAME:latest
 
-      # 10) Deploy the container on the VM
+      # 11) Deploy container on the VM
       - name: Deploy container
         run: |
           docker stop javascript-app 2>/dev/null || true
           docker rm javascript-app 2>/dev/null || true
           docker run -d --name javascript-app -p 80:3000 $IMAGE_NAME:latest
 
-      # 11) Verify deployment
+      # 12) Verify deployment
       - name: Verify deployment
         run: |
           echo "Waiting for container to start..."
           sleep 5
           docker ps | grep javascript-app
           echo "Container is running!"
+

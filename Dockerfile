@@ -2,14 +2,11 @@ FROM node:20-alpine
 
 WORKDIR /usr/app
 
-COPY package*.json ./
-RUN npm install --production
+# Copy ONLY dependency files first (for cache + security)
+COPY package.json package-lock.json ./
 
-COPY . .
+# Install prod dependencies deterministically
+RUN npm ci --omit=dev
 
-RUN mkdir -p /usr/app/data
-VOLUME ["/usr/app/data"]
+#
 
-EXPOSE 3000
-
-CMD ["npm", "start"]
