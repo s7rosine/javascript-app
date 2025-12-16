@@ -1,0 +1,4 @@
+      - name: Show node/npm versions inside the built image
+        run: |
+          docker run --rm $IMAGE_NAME:latest node -v
+          docker run --rm $IMAGE_NAME:latest npm -v
